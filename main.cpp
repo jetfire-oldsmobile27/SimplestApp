@@ -1,5 +1,6 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQmlContext> 
 #include <boost/date_time.hpp>
 #include <QString>
 

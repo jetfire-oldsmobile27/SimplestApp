@@ -28,7 +28,7 @@ echo "arch=armv8" >> $CONAN_PROFILE
 echo "compiler=clang" >> $CONAN_PROFILE
 echo "compiler.version=20" >> $CONAN_PROFILE 
 echo "compiler.cppstd=17" >> $CONAN_PROFILE 
-echo "compiler.libcxx=c++_static" >> $CONAN_PROFILE
+echo "compiler.libcxx=c++_shared" >> $CONAN_PROFILE
 echo "build_type=Release" >> $CONAN_PROFILE
 echo "os.api_level=${ANDROID_PLATFORM#android-}" >> $CONAN_PROFILE
 
@@ -58,33 +58,22 @@ echo "Installing dependencies with Conan..."
 conan install $PROJECT_DIR --profile=$CONAN_PROFILE --build=missing --output-folder=$BUILD_DIR
 
 echo "Configuring CMake project..."
-$QT_PATH/bin/qt-cmake -S $PROJECT_DIR -B $BUILD_DIR \
-    -DQT_USE_TARGET_ANDROID_BUILD_DIR:BOOL=ON \
-    -DCMAKE_CXX_FLAGS_INIT:STRING= \
-    -DQT_NO_GLOBAL_APK_TARGET_PART_OF_ALL:BOOL=ON \
-    -DCMAKE_COLOR_DIAGNOSTICS:BOOL=ON \
-    -DQT_QMAKE_EXECUTABLE:FILEPATH=$QT_PATH/bin/qmake \
-    -CMAKE_PREFIX_PATH:FILEPATH=$QT_HOST_PATH \
-    -DCMAKE_CXX_COMPILER:FILEPATH=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ \
-    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=$BUILD_DIR/build/Release/generators/conan_toolchain.cmake \
-    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849/build/cmake/android.toolchain.cmake \
-    -DQT_HOST_PATH:FILEPATH=$QT_HOST_PATH \  
-    -DANDROID_NDK_ROOT:PATH=$ANDROID_NDK \  
-    -DANDROID_STL:STRING=c++_shared \ 
-    -DCMAKE_BUILD_TYPE:STRING=Release \
-    -DANDROID_USE_LEGACY_TOOLCHAIN_FILE:BOOL=OFF \
-    -DCMAKE_PREFIX_PATH:PATH=$QT_PATH \
-    -DCMAKE_GENERATOR:STRING=Ninja \
-    -DANDROID_PLATFORM:STRING=$ANDROID_PLATFORM \
-    # -DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=$BUILD_DIR/.qtc/package-manager/auto-setup.cmake \
-    -DANDROID_SDK_ROOT:PATH=$ANDROID_SDK_ROOT\
-    -DCMAKE_FIND_ROOT_PATH:PATH=$QT_PATH \
-    -DQT_HOST_PATH:PATH=$QT_HOST_PATH \  
-    -DANDROID_ABI:STRING=$ANDROID_ABI\
-    -DCMAKE_C_COMPILER:FILEPATH=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
+$QT_HOST_PATH/bin/qt-cmake -S $PROJECT_DIR -B $BUILD_DIR \
+    -DQT_USE_TARGET_ANDROID_BUILD_DIR=ON \
+    -DQT_NO_GLOBAL_APK_TARGET_PART_OF_ALL=ON \
+    -DCMAKE_COLOR_DIAGNOSTICS=ON \
+    -DCMAKE_TOOLCHAIN_FILE=$BUILD_DIR/build/Release/generators/conan_toolchain.cmake \
+    -DQT_HOST_PATH=$QT_HOST_PATH \
+    -DANDROID_SDK_ROOT=$ANDROID_SDK_ROOT \
+    -DANDROID_NDK_ROOT=$ANDROID_NDK \
+    -DCMAKE_PREFIX_PATH=$QT_PATH \
+    -DANDROID_ABI=$ANDROID_ABI \
+    -DANDROID_PLATFORM=$ANDROID_PLATFORM \
+    -DCMAKE_BUILD_TYPE=Release \
+    -G Ninja
 
 echo "Building project..."
-$QT_HOST_PATH/bin/qt-cmake --build $BUILD_DIR --target all
+cmake --build $BUILD_DIR --target all
 
 SIGN_PARAMS=""
 if [ -f "$KEYSTORE_PATH" ]; then
