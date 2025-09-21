@@ -1,0 +1,9 @@
+{
+    "version": 4,
+    "vendor": {
+        "conan": {}
+    },
+    "include": [
+        "build/Android_Qt_6_9_0_android_arm64_v8a_Clang_arm64_v8a-Release/build/Release/generators/CMakePresets.json"
+    ]
+}

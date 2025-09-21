@@ -1,0 +1,10 @@
+[requires]
+boost/1.85.0
+opencv/4.12.0
+[options]
+boost/*:without_locale=True
+[generators]
+CMakeDeps
+CMakeToolchain
+[layout]
+cmake_layout

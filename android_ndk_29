@@ -1,0 +1,15 @@
+[settings]
+os=Android
+arch=armv8
+compiler=clang
+compiler.version=20
+compiler.cppstd=17
+compiler.libcxx=c++_static
+build_type=Release
+os.api_level=30
+[conf]
+tools.android:ndk_path=/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849
+[buildenv]
+PATH+=(path)/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849/toolchains/llvm/prebuilt/linux-x86_64/bin/
+CC=aarch64-linux-android24-clang
+CXX=aarch64-linux-android24-clang++
