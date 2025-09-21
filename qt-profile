@@ -1,0 +1,13 @@
+[settings]
+arch=armv8
+build_type=Release
+compiler=clang
+compiler.libcxx=c++_shared
+compiler.cppstd=17
+compiler.version=21
+os=Android
+os.api_level=23
+[conf]
+tools.android:ndk_path=/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849
+tools.build:compiler_executables={'c': '/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849/toolchains/llvm/prebuilt/linux-x86_64/bin/clang', 'cpp': '/home/jetpclaptop/Android/Sdk/ndk/29.0.14033849/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++'}
+tools.cmake.cmaketoolchain:generator=Ninja
