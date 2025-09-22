@@ -1,20 +1,18 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QQmlContext> 
-#include <boost/date_time.hpp>
-#include <QString>
+#include <QQmlContext>
+#include "CameraController.h"
+#include <QtQml>
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
-    // Получаем текущее время через Boost
-    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    QString currentTime = QString::fromStdString(boost::posix_time::to_simple_string(now));
+    // Ваши boost/time или другой код можно оставить
+    CameraController cameraController;
 
-    // Создаем QML контекстную переменную
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("boostTime", currentTime);
+    engine.rootContext()->setContextProperty("cameraController", &cameraController);
 
     const QUrl url(QStringLiteral("qrc:/SimplestApp/Main.qml"));
     QObject::connect(

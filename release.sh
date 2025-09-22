@@ -97,6 +97,14 @@ $QT_HOST_PATH/bin/androiddeployqt --input $BUILD_DIR/android-appSimplestApp-depl
     $SIGN_PARAMS \
     ${DEVICE_ID:+--device $DEVICE_ID}
 
+echo "Additional steps"
+~/Android/Sdk/build-tools/30.0.3/apksigner sign \
+  --ks /home/jetpclaptop/workspace/projects/SimplestApp/android_release_test.keystore \
+  --ks-key-alias testapp \
+  --ks-pass pass:Piledriver \
+  --key-pass pass:Piledriver \
+  --out app-signed.apk \
+  "/home/jetpclaptop/workspace/projects/SimplestApp/build/Android_Qt_6_9_0_android_arm64_v8a_Clang_arm64_v8a-Release/android-build-appSimplestApp/build/outputs/apk/release/android-build-appSimplestApp-release-unsigned.apk"
 if [ $? -eq 0 ]; then
     echo "Build and deployment completed successfully!"
 else

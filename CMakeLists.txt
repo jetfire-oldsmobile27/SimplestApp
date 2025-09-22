@@ -5,7 +5,7 @@ project(SimplestApp VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick)
+find_package(Qt6 REQUIRED COMPONENTS Quick Core)
 
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_NO_SYSTEM_PATHS ON)
@@ -20,9 +20,27 @@ if(Boost_FOUND)
     link_directories(${Boost_LIBRARY_DIRS})
 endif()
 
+find_library(_CAMERA2NDK_LIB camera2ndk)
+    find_library(_MEDIANDK_LIB mediandk)
+    find_library(_ANDROID_LIB android)
+
+    if(NOT _CAMERA2NDK_LIB)
+        set(_CAMERA2NDK_LIB "-lcamera2ndk")
+    endif()
+    if(NOT _MEDIANDK_LIB)
+        set(_MEDIANDK_LIB "-lmediandk")
+    endif()
+    if(NOT _ANDROID_LIB)
+        set(_ANDROID_LIB "-landroid")
+    endif()
+
+find_package(OpenCV REQUIRED)
+
 
 qt_add_executable(appSimplestApp
     main.cpp
+    CameraController.h
+    CameraController.cpp
 )
 
 qt_add_qml_module(appSimplestApp
@@ -31,6 +49,10 @@ qt_add_qml_module(appSimplestApp
     QML_FILES
         Main.qml
 )
+
+qt_add_android_permission(appSimplestApp
+        NAME android.permission.CAMERA
+    )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
@@ -43,7 +65,13 @@ set_target_properties(appSimplestApp PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 target_link_libraries(appSimplestApp
-    PRIVATE Qt6::Quick ${Boost_LIBRARIES}
+    PRIVATE Qt6::Quick 
+    Qt6::CorePrivate 
+    ${Boost_LIBRARIES} 
+    ${OpenCV_LIBS}
+    $<$<BOOL:${ANDROID}>:${_CAMERA2NDK_LIB}>
+    $<$<BOOL:${ANDROID}>:${_MEDIANDK_LIB}>
+    $<$<BOOL:${ANDROID}>:${_ANDROID_LIB}>
 )
 
 include(GNUInstallDirs)
