@@ -53,7 +53,7 @@ void CameraController::qtMessageRouter(QtMsgType type, const QMessageLogContext 
 
 void CameraController::receiveLoggedMessage(const QString &msg)
 {
-    qDebug() << "LOG RECEIVED:" << msg; // ← будет видно в adb logcat
+    qDebug() << "LOG RECEIVED:" << msg;
 
     QString trimmed = msg;
     if (trimmed.length() > 500) {
@@ -220,7 +220,43 @@ void CameraController::processVideoFrame(const QVideoFrame &frame)
     QImage image = frame.toImage();
     if (image.isNull()) return;
 
-    applyImageProcessing(image);
+    QMetaObject::invokeMethod(this, "processImageInWorkerThread", Qt::QueuedConnection,
+                              Q_ARG(QImage, image));
+}
+
+void CameraController::processImageInWorkerThread(const QImage &inputImage)
+{
+    
+    QImage scaled = inputImage.scaled(640, 480, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    QImage rgbImage = scaled.convertToFormat(QImage::Format_RGB888);
+    if (rgbImage.isNull()) return;
+
+    cv::Mat mat(rgbImage.height(), rgbImage.width(), CV_8UC3, rgbImage.bits(), rgbImage.bytesPerLine());
+
+    std::vector<cv::Mat> ch;
+    cv::split(mat, ch);
+    if (ch.size() != 3) return;
+
+    ch[2] = ch[2] * 1.8f;
+    ch[1] = ch[1] * 0.35f;
+    ch[0] = ch[0] * 0.35f;
+    cv::merge(ch, mat);
+
+    std::vector<uchar> buf;
+    cv::imencode(".jpg", mat, buf, {cv::IMWRITE_JPEG_QUALITY, 60}); // ↓ качество
+
+    QByteArray byteArray(reinterpret_cast<char*>(buf.data()), static_cast<int>(buf.size()));
+    QString base64 = QString::fromLatin1(byteArray.toBase64());
+    QString dataUrl = "data:image/jpeg;base64," + base64 + "?ts=" + QString::number(QDateTime::currentMSecsSinceEpoch());
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_frameData != dataUrl) {
+            m_frameData = dataUrl;
+            emit frameDataChanged();
+        }
+    }
 }
 
 void CameraController::applyImageProcessing(const QImage &inputImage)

@@ -12,16 +12,15 @@ Window {
 
 
     Component.onCompleted: {
-    cameraController.cameraOperationFinished.connect(function () {
-        cameraBusy = false;
+    cameraController.errorOccured.connect(function (msg) {
+    console.log(">>> ERROR RECEIVED IN QML:", msg);
+    if (errorDialog.visible) errorDialog.close();
+    errorText.text = msg;
+    errorDialog.open();
+    root.cameraBusy = false;
     });
 
-    cameraController.errorOccured.connect(function (msg) {
-        if (errorDialog.visible) errorDialog.close();
-        errorText.text = msg;
-        errorDialog.open();
-        cameraBusy = false; // на случай ошибки
-    });
+
 }
 
     
@@ -31,8 +30,8 @@ Window {
 
         BusyIndicator {
     anchors.centerIn: parent
-    running: cameraBusy
-    visible: cameraBusy
+    running: root.cameraBusy
+    visible: root.cameraBusy
     width: 60; height: 60
 }
 
@@ -90,7 +89,7 @@ Window {
     text: "Refresh"
     enabled: !root.cameraBusy
     onClicked: {
-        root.cameraBusy = true;
+        
         cameraController.refreshCameraList();
     }
 }
@@ -132,7 +131,7 @@ Window {
 
     Text {
         id: errorText
-        text: ""  // изначально пусто
+        text: ""
         wrapMode: Text.WrapAnywhere
         width: parent.width - 20
         color: "white"

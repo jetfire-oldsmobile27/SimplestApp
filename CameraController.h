@@ -43,10 +43,11 @@ signals:
     void cameraIdsChanged();
     void errorOccured(const QString &msg);
     void logsChanged();
-    void cameraOperationFinished(); // ← новый сигнал
+    void cameraOperationFinished(); 
 
 private slots:
     void processVideoFrame(const QVideoFrame &frame);
+    void processImageInWorkerThread(const QImage &image); 
 
 private:
     void applyImageProcessing(const QImage &inputImage);
