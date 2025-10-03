@@ -1,25 +1,85 @@
+
 #include "CameraController.h"
 #include <QBuffer>
 #include <QImage>
 #include <QByteArray>
 #include <QCoreApplication>
-#include <QThread>
 #include <QDebug>
 #include <QMutexLocker>
 #include <QGuiApplication>
-#include <QPermissions> 
+#include <QPermissions>
+#include <QMetaObject>
+#include <QDateTime>
+#include <QMediaCaptureSession> 
+#include <opencv2/opencv.hpp>
+#include <vector>
 
 #ifdef Q_OS_ANDROID
  #include <QtCore/private/qandroidextras_p.h>
- #include <QPermissions>
 #endif
 
+CameraController* CameraController::s_instance = nullptr;
+
+void CameraController::qtMessageRouter(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    QString level;
+    switch (type) {
+        case QtDebugMsg: level = "DEBUG"; break;
+        case QtInfoMsg: level = "INFO"; break;
+        case QtWarningMsg: level = "WARNING"; break;
+        case QtCriticalMsg: level = "CRITICAL"; break;
+        case QtFatalMsg: level = "FATAL"; break;
+        default: level = "UNKNOWN"; break;
+    }
+
+    QString file = context.file ? QString::fromLatin1(context.file) : QString();
+    QString formatted = QString("[%1] %2").arg(level, msg);
+    if (!file.isEmpty()) {
+        formatted += QString(" (%1:%2)").arg(file).arg(context.line);
+    }
+
+    if (s_instance) {
+        QMetaObject::invokeMethod(s_instance, "receiveLoggedMessage", Qt::QueuedConnection,
+                                  Q_ARG(QString, formatted));
+    } else {
+        QByteArray local = formatted.toLocal8Bit();
+        fprintf(stderr, "%s\n", local.constData());
+    }
+
+    if (type == QtFatalMsg) {
+        abort();
+    }
+}
+
+void CameraController::receiveLoggedMessage(const QString &msg)
+{
+    qDebug() << "LOG RECEIVED:" << msg; // ← будет видно в adb logcat
+
+    QString trimmed = msg;
+    if (trimmed.length() > 500) {
+        trimmed = trimmed.left(497) + "...";
+    }
+
+    m_logs.append(trimmed);
+    if (m_logs.size() > 200) m_logs.removeFirst();
+    emit logsChanged();
+
+    if (msg.startsWith("[WARNING]") || msg.startsWith("[CRITICAL]") || msg.startsWith("[FATAL]")) {
+        qDebug() << "EMITTING ERROR:" << trimmed;
+        emit errorOccured(trimmed);
+    }
+}
+
+QStringList CameraController::logs() const { return m_logs; }
+void CameraController::clearLogs() {
+    m_logs.clear();
+    emit logsChanged();
+}
+
 CameraController::CameraController(QObject *parent)
-    : QObject(parent), m_running(false)
+    : QObject(parent)
 {
     qDebug() << "CameraController created";
-    // НЕ вызываем refreshCameraList() автоматически — ждём явного запроса от UI
-    // refreshCameraList();
 }
 
 CameraController::~CameraController()
@@ -31,16 +91,11 @@ CameraController::~CameraController()
 QString CameraController::frameData() const { return m_frameData; }
 QStringList CameraController::cameraIds() const { return m_cameraIds; }
 
-static bool permissionGrantedForCamera()
-{
-    QCameraPermission p;
-    return qApp->checkPermission(p) == Qt::PermissionStatus::Granted;
-}
-
 void CameraController::refreshCameraList()
 {
     qDebug() << "refreshCameraList() called";
-    // На Android нельзя пробовать открывать камеру без runtime-привилегии.
+
+#ifdef Q_OS_ANDROID
     QCameraPermission cameraPermission;
     auto status = qApp->checkPermission(cameraPermission);
     if (status == Qt::PermissionStatus::Undetermined) {
@@ -60,40 +115,30 @@ void CameraController::refreshCameraList()
         emit errorOccured("Camera permission denied");
         return;
     }
+#endif
 
-    // Если дошли сюда — Granted. Теперь безопасно перечислить камеры.
+
+    const QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
     QStringList ids;
-#ifdef Q_OS_ANDROID
-    // На Android лучше не пытаться открывать VideoCapture без явного разрешения;
-    // можно просто добавить индексы 0..N как опцию (VideoCapture при open всё равно проверит permission)
-    // Здесь мы пробуем 0..5, но НЕ открываем их, чтобы не провоцировать CameraService ошибки.
-    for (int i = 0; i < 6; ++i) ids << QString::number(i);
-#else
-    // Для десктопа пробуем реально открыть
-    for (int i = 0; i < 6; ++i) {
-        cv::VideoCapture cap;
-#if defined(OPENCV_VIDEOIO_PRIORITY_MSMF)
-        cap.open(i, cv::CAP_ANY);
-#else
-        cap.open(i);
-#endif
-        if (cap.isOpened()) {
-            ids << QString::number(i);
-            cap.release();
-        }
+    for (int i = 0; i < cameras.size(); ++i) {
+        ids << QString::number(i);
     }
-#endif
 
     m_cameraIds = ids;
     qDebug() << "Found cameras:" << m_cameraIds;
     emit cameraIdsChanged();
+    emit cameraOperationFinished();
 }
 
 void CameraController::openCamera(int id)
 {
+    if (m_running.load()) {
+    qWarning() << "Camera already running, ignoring open request";
+    return;
+    }
     qDebug() << "openCamera requested for id" << id;
 
-    // Проверяем / запрашиваем разрешение
+#ifdef Q_OS_ANDROID
     QCameraPermission cameraPermission;
     auto status = qApp->checkPermission(cameraPermission);
     if (status == Qt::PermissionStatus::Undetermined) {
@@ -112,115 +157,100 @@ void CameraController::openCamera(int id)
         emit errorOccured("Camera permission denied");
         return;
     }
+#endif
 
-    // Если уже запущено, сначала закрываем
-    if (m_running.load()) {
-        closeCamera();
+    closeCamera();
+
+    const QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
+    if (id < 0 || id >= cameras.size()) {
+        emit errorOccured(QString("Invalid camera ID: %1").arg(id));
+        return;
     }
 
-    m_running.store(true);
+    m_camera = new QCamera(cameras[id], this);
+    m_sink = new QVideoSink(this);
+    m_captureSession = new QMediaCaptureSession(this);
 
-    m_workerThread.reset(new QThread());
-    QObject *starter = new QObject();
-    starter->moveToThread(m_workerThread.get());
-    connect(m_workerThread.get(), &QThread::started, [this, id]() {
-        this->captureLoop(id);
-    });
-    connect(m_workerThread.get(), &QThread::finished, starter, &QObject::deleteLater);
-    m_workerThread->start();
+    m_captureSession->setCamera(m_camera);
+    m_captureSession->setVideoSink(m_sink);
+
+    connect(m_sink, &QVideoSink::videoFrameChanged, this, &CameraController::processVideoFrame);
+
+    m_running.store(true);
+    m_camera->start();
+
+    if (m_camera->isActive()) {
+        qDebug() << "Camera started successfully";
+    } else {
+        qWarning() << "Failed to start camera";
+        emit errorOccured("Failed to start camera");
+        closeCamera();
+    }
+    emit cameraOperationFinished();
 }
 
 void CameraController::closeCamera()
 {
-    if (!m_running.load()) return;
-    m_running.store(false);
-    if (m_workerThread && m_workerThread->isRunning()) {
-        m_workerThread->quit();
-        m_workerThread->wait(2000);
+    if (!m_running.exchange(false)) {
+        return; 
     }
-    if (m_cap.isOpened()) {
-        m_cap.release();
+
+    if (m_camera) {
+        m_camera->stop();
+        disconnect(m_sink, &QVideoSink::videoFrameChanged, this, &CameraController::processVideoFrame);
+        m_camera->deleteLater();
+        m_camera = nullptr;
     }
-    m_workerThread.reset();
+    if (m_sink) {
+        m_sink->deleteLater();
+        m_sink = nullptr;
+    }
+    if (m_captureSession) {
+        m_captureSession->deleteLater();
+        m_captureSession = nullptr;
+    }
     qDebug() << "Camera closed";
+    emit cameraOperationFinished();
 }
 
-void CameraController::captureLoop(int id)
+void CameraController::processVideoFrame(const QVideoFrame &frame)
 {
-    qDebug() << "captureLoop started for id" << id;
-    try {
-        // Попробуем безопасно открыть соответствующий backend
-        {
-            QMutexLocker locker(&m_mutex);
-            bool opened = false;
-#ifdef __ANDROID__
-            opened = m_cap.open(id, cv::CAP_ANDROID);
-            if (!opened) opened = m_cap.open(id, cv::CAP_ANDROID);
-#endif
-            if (!opened) opened = m_cap.open(id, cv::CAP_ANY);
-        }
+    if (!m_running.load() || !frame.isValid()) return;
 
-        if (!m_cap.isOpened()) {
-            qWarning() << "Cannot open camera" << id;
-            emit errorOccured(QString("Cannot open camera %1").arg(id));
-            m_running.store(false);
-            return;
-        }
+    QImage image = frame.toImage();
+    if (image.isNull()) return;
 
-        cv::Mat frame;
-        std::vector<uchar> buf;
-        while (m_running.load()) {
-            {
-                QMutexLocker locker(&m_mutex);
-                m_cap >> frame;
-            }
-            if (frame.empty()) {
-                QThread::msleep(10);
-                continue;
-            }
+    applyImageProcessing(image);
+}
 
-            // Красная трансформация (как раньше)
-            cv::Mat bgr;
-            frame.copyTo(bgr);
-            std::vector<cv::Mat> ch;
-            cv::split(bgr, ch);
-            ch[2].convertTo(ch[2], CV_32F);
-            ch[1].convertTo(ch[1], CV_32F);
-            ch[0].convertTo(ch[0], CV_32F);
-            ch[2] = ch[2] * 1.8f;
-            ch[1] = ch[1] * 0.35f;
-            ch[0] = ch[0] * 0.35f;
-            ch[2].convertTo(ch[2], CV_8U);
-            ch[1].convertTo(ch[1], CV_8U);
-            ch[0].convertTo(ch[0], CV_8U);
-            cv::merge(ch, bgr);
+void CameraController::applyImageProcessing(const QImage &inputImage)
+{
 
-            cv::imencode(".jpg", bgr, buf, {cv::IMWRITE_JPEG_QUALITY, 70});
+    QImage rgbImage = inputImage.convertToFormat(QImage::Format_RGB888);
+    cv::Mat mat(rgbImage.height(), rgbImage.width(), CV_8UC3, rgbImage.bits(), rgbImage.bytesPerLine());
 
-            QByteArray byteArray(reinterpret_cast<char*>(buf.data()), static_cast<int>(buf.size()));
-            QString base64 = QString::fromLatin1(byteArray.toBase64());
-            QString dataUrl = "data:image/jpeg;base64," + base64;
 
-            QMetaObject::invokeMethod(this, [this, dataUrl]() {
-                if (m_frameData != dataUrl) {
-                    m_frameData = dataUrl;
-                    emit frameDataChanged();
-                }
-            }, Qt::QueuedConnection);
+    std::vector<cv::Mat> ch;
+    cv::split(mat, ch);
+    ch[2] = ch[2] * 1.8f;  // Red
+    ch[1] = ch[1] * 0.35f; // Green
+    ch[0] = ch[0] * 0.35f; // Blue
+    cv::merge(ch, mat);
 
-            QThread::msleep(33);
-        }
-    } catch (const std::exception &ex) {
-        qCritical() << "Exception in captureLoop:" << ex.what();
-        emit errorOccured(QString("captureLoop exception: %1").arg(ex.what()));
-    } catch (...) {
-        qCritical() << "Unknown exception in captureLoop";
-        emit errorOccured("Unknown exception in captureLoop");
-    }
+
+    std::vector<uchar> buf;
+    cv::imencode(".jpg", mat, buf, {cv::IMWRITE_JPEG_QUALITY, 70});
+
+    QByteArray byteArray(reinterpret_cast<char*>(buf.data()), static_cast<int>(buf.size()));
+    QString base64 = QString::fromLatin1(byteArray.toBase64());
+
+    QString dataUrl = "data:image/jpeg;base64," + base64 + "?ts=" + QString::number(QDateTime::currentMSecsSinceEpoch());
 
     {
         QMutexLocker locker(&m_mutex);
-        if (m_cap.isOpened()) m_cap.release();
+        if (m_frameData != dataUrl) {
+            m_frameData = dataUrl;
+            emit frameDataChanged();
+        }
     }
-    qDebug() << "captureLoop finished for id" << id;
 }

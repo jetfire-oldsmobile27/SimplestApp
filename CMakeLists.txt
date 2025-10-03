@@ -5,7 +5,7 @@ project(SimplestApp VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Core)
+find_package(Qt6 REQUIRED COMPONENTS Quick Core Multimedia)
 
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_NO_SYSTEM_PATHS ON)
@@ -67,6 +67,7 @@ set_target_properties(appSimplestApp PROPERTIES
 target_link_libraries(appSimplestApp
     PRIVATE Qt6::Quick 
     Qt6::CorePrivate 
+    Qt6::Multimedia
     ${Boost_LIBRARIES} 
     ${OpenCV_LIBS}
     $<$<BOOL:${ANDROID}>:${_CAMERA2NDK_LIB}>

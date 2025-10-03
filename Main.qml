@@ -5,109 +5,160 @@ import QtQuick.Window
 
 Window {
     id: root
-    width: 1080
-    height: 1800
     visible: true
     title: qsTr("Camera OpenCV Example")
 
+    property bool cameraBusy: false
+
+
     Component.onCompleted: {
-        cameraController.errorOccured.connect(function(msg) {
-            console.error("CameraController error: " + msg)
-            // показать всплывающее уведомление
-            errorText.text = msg
-            errorOverlay.visible = true
-        })
-    }
+    cameraController.cameraOperationFinished.connect(function () {
+        cameraBusy = false;
+    });
 
-    Rectangle {
-        id: errorOverlay
-        visible: false
-        anchors.fill: parent
-        color: "#88000000"
-        Text { id: errorText; anchors.centerIn: parent; color: "white" }
-        MouseArea { anchors.fill: parent; onClicked: errorOverlay.visible = false }
-    }
+    cameraController.errorOccured.connect(function (msg) {
+        if (errorDialog.visible) errorDialog.close();
+        errorText.text = msg;
+        errorDialog.open();
+        cameraBusy = false; // на случай ошибки
+    });
+}
 
+    
     Rectangle {
-        id: container
         anchors.fill: parent
         color: "black"
 
-        // Видео (источник - data url от C++)
+        BusyIndicator {
+    anchors.centerIn: parent
+    running: cameraBusy
+    visible: cameraBusy
+    width: 60; height: 60
+}
+
         Image {
             id: videoImage
             anchors.fill: parent
             fillMode: Image.PreserveAspectCrop
-            source: cameraController.frameData   // data:image/jpeg;base64,...
+            source: cameraController.frameData
             cache: false
             asynchronous: true
             smooth: true
         }
 
-        // Overlay: снизу — карусель камер + кнопки
-        Rectangle {
+
+        Column {
             id: controls
-            anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            height: 120
-            color: "#88000000"
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 8
-                spacing: 8
+            anchors.margins: 10
+            spacing: 8
 
-                // Список камер (горизонтальный список - карусель)
-                ListView {
-                    id: camList
-                    Layout.preferredWidth: parent.width * 0.65
-                    Layout.alignment: Qt.AlignVCenter
-                    model: cameraController.cameraIds
-                    orientation: ListView.Horizontal
-                    boundsBehavior: Flickable.StopAtBounds
-                    spacing: 8
-                    delegate: Rectangle {
-                        width: 80; height: 80
-                        radius: 8
-                        color: ListView.isCurrentItem ? "#ff5555" : "#ffffff33"
-                        border.color: "white"
-                        border.width: 1
-                        Text {
-                            anchors.centerIn: parent
-                            text: "ID " + modelData
-                            color: "white"
-                            font.bold: true
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                camList.currentIndex = index
-                            }
-                        }
+
+            ListView {
+                id: camList
+                width: Math.min(root.width * 0.9, 400)
+                height: 60
+                model: cameraController.cameraIds
+                orientation: ListView.Horizontal
+                spacing: 6
+                clip: true
+                delegate: Rectangle {
+                    width: 70
+                    height: 50
+                    radius: 6
+                    color: ListView.isCurrentItem ? "#ff5555" : "#44ffffff"
+                    border.color: "white"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "ID " + modelData
+                        color: "white"
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: camList.currentIndex = index
                     }
                 }
+            }
 
-                ColumnLayout {
-                    Layout.preferredWidth: parent.width * 0.35 - 16
-                    spacing: 6
-                    Button {
-                        text: "Refresh"
-                        onClicked: cameraController.refreshCameraList()
-                    }
-                    Button {
-                        text: "Open"
-                        onClicked: {
-                            if (camList.currentIndex >= 0 && camList.count > 0) {
-                                var id = parseInt(camList.model.get(camList.currentIndex))
-                                cameraController.openCamera(id)
-                            }
-                        }
-                    }
-                    Button {
-                        text: "Close"
-                        onClicked: cameraController.closeCamera()
-                    }
-                }
+
+            Row {
+                spacing: 6
+                Button {
+    text: "Refresh"
+    enabled: !root.cameraBusy
+    onClicked: {
+        root.cameraBusy = true;
+        cameraController.refreshCameraList();
+    }
+}
+                Button {
+    text: "Open"
+    enabled: !root.cameraBusy && camList.currentIndex >= 0
+    onClicked: {
+        root.cameraBusy = true;
+        var id = parseInt(cameraController.cameraIds[camList.currentIndex]);
+        cameraController.openCamera(id);
+    }
+}
+                Button {
+    text: "Close"
+    enabled: !root.cameraBusy && cameraController.cameraIds.length > 0
+    onClicked: {
+        root.cameraBusy = true;
+        cameraController.closeCamera();
+    }
+}
+            }
+
+            Row {
+                spacing: 6
+                Button { text: "Logs"; onClicked: logsDialog.open() }
+                Button { text: "Clear"; onClicked: cameraController.clearLogs() }
+            }
+        }
+    }
+
+
+    Dialog {
+    id: errorDialog
+    modal: true
+    title: "Error"
+    standardButtons: Dialog.Ok
+    contentWidth: Math.min(Screen.width * 0.9, 600)
+
+
+    Text {
+        id: errorText
+        text: ""  // изначально пусто
+        wrapMode: Text.WrapAnywhere
+        width: parent.width - 20
+        color: "white"
+        font.pixelSize: 14
+    }
+}
+
+
+    Dialog {
+        id: logsDialog
+        modal: true
+        title: "Logs"
+        standardButtons: Dialog.Ok
+        contentWidth: Math.min(Screen.width * 0.95, 800)
+        contentHeight: Math.min(Screen.height * 0.7, 900)
+
+        ScrollView {
+            anchors.fill: parent
+            TextArea {
+                readOnly: true
+                text: cameraController.logs.join("\n")
+                wrapMode: TextEdit.Wrap
+                background: Rectangle { color: "#111111" }
+                color: "white"
+                font.pixelSize: 12
+                selectByMouse: true
             }
         }
     }

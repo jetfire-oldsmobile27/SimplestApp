@@ -1,3 +1,4 @@
+
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -8,8 +9,9 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
-    // Ваши boost/time или другой код можно оставить
     CameraController cameraController;
+    CameraController::registerInstance(&cameraController);
+    qInstallMessageHandler(&CameraController::qtMessageRouter);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("cameraController", &cameraController);
